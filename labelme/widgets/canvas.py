@@ -1,6 +1,7 @@
 from qtpy import QtCore
 from qtpy import QtGui
 from qtpy import QtWidgets
+from PyQt5.QtCore import pyqtSignal
 
 from labelme import QT5
 from labelme.shape import Shape
@@ -17,6 +18,19 @@ CURSOR_DRAW = QtCore.Qt.CrossCursor
 CURSOR_MOVE = QtCore.Qt.ClosedHandCursor
 CURSOR_GRAB = QtCore.Qt.OpenHandCursor
 
+_RELEASE_KEY_SIGNAL_MAP={
+        QtCore.Qt.Key_1:"needRecoredSignal",
+        QtCore.Qt.Key_2:"needRecoredSignal",
+        QtCore.Qt.Key_3:"needRecoredSignal",
+        QtCore.Qt.Key_4:"needRecoredSignal",
+        QtCore.Qt.Key_5:"needRecoredSignal",
+        QtCore.Qt.Key_6:"needRecoredSignal",
+        QtCore.Qt.Key_7:"needRecoredSignal",
+        QtCore.Qt.Key_8:"needRecoredSignal",
+        QtCore.Qt.Key_9:"needRecoredSignal",
+        QtCore.Qt.Key_0:"needRemoveSignal",
+}
+
 
 class Canvas(QtWidgets.QWidget):
 
@@ -27,6 +41,9 @@ class Canvas(QtWidgets.QWidget):
     shapeMoved = QtCore.Signal()
     drawingPolygon = QtCore.Signal(bool)
     vertexSelected = QtCore.Signal(bool)
+
+    needRecoredSignal=pyqtSignal([str],name='needRecoredSignal')
+    needRemoveSignal=pyqtSignal(name='needRemoveSignal')
 
     CREATE, EDIT = 0, 1
     CREATE, EDIT = 0, 1
@@ -750,6 +767,14 @@ class Canvas(QtWidgets.QWidget):
             self.finalise()
         elif modifiers == QtCore.Qt.AltModifier:
             self.snapping = False
+        else:
+            if ev.key() in _RELEASE_KEY_SIGNAL_MAP.keys():
+                func_name=_RELEASE_KEY_SIGNAL_MAP[ev.key()]
+                func=getattr(self,func_name)
+                if func_name=="needRecoredSignal":
+                    self.needRecoredSignal.emit(str(int(ev.key()-48)))
+                else:
+                    func.emit()
 
     def keyReleaseEvent(self, ev):
         modifiers = ev.modifiers()
@@ -822,3 +847,4 @@ class Canvas(QtWidgets.QWidget):
         self.pixmap = None
         self.shapesBackups = []
         self.update()
+

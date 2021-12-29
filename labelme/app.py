@@ -6,12 +6,15 @@ import os
 import os.path as osp
 import re
 import webbrowser
+from collections import defaultdict
 
 import imgviz
 from qtpy import QtCore
 from qtpy.QtCore import Qt
 from qtpy import QtGui
 from qtpy import QtWidgets
+
+from PyQt5.QtCore import pyqtSlot
 
 from labelme import __appname__
 from labelme import PY2
@@ -69,6 +72,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if config is None:
             config = get_config()
         self._config = config
+
+        self._recored_txt_content_tmp=defaultdict(set)
+        self._recored_img2txt_tmp=defaultdict(set)
 
         # set default shape colors
         Shape.line_color = QtGui.QColor(*self._config["shape"]["line_color"])
@@ -190,6 +196,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.canvas.shapeMoved.connect(self.setDirty)
         self.canvas.selectionChanged.connect(self.shapeSelectionChanged)
         self.canvas.drawingPolygon.connect(self.toggleDrawingSensitive)
+        self.canvas.needRecoredSignal.connect(self.recordImgPath2Txt_Slot)
+        self.canvas.needRemoveSignal.connect(self.removeImgPathFromTxt_Slot)
 
         self.setCentralWidget(scrollArea)
 
@@ -1333,6 +1341,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         position MUST be in global coordinates.
         """
+        breakpoint()
         items = self.uniqLabelList.selectedItems()
         text = None
         if items:
@@ -1641,6 +1650,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings.setValue("window/position", self.pos())
         self.settings.setValue("window/state", self.saveState())
         self.settings.setValue("recentFiles", self.recentFiles)
+        print("I will close")
         # ask the use for where to save the labels
         # self.settings.setValue('window/geometry', self.saveGeometry())
 
@@ -2029,6 +2039,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if not self.mayContinue() or not dirpath:
             return
+        print("import image")
 
         self.lastOpenDir = dirpath
         self.filename = None
@@ -2065,3 +2076,74 @@ class MainWindow(QtWidgets.QMainWindow):
                     images.append(relativePath)
         images.sort(key=lambda x: x.lower())
         return images
+
+    def synchronizeSet(self,dirpath):
+        if self.filename:
+            if os.path.isdir(dirpath):
+                for i in range(1,10):
+                    txt_path=os.path.join(os.path.dirname(self.filename),str(i)+".txt")
+                    if os.path.exists(txt_path):
+                        with open(txt_path,"r") as fr:
+                            self._recored_txt_content_tmp[txt_path]=self._recored_txt_content_tmp[txt_path]|set([x if x.endswith("\n") else x+"\n" for x in fr.readlines()])
+                        for file_path in self._recored_txt_content_tmp[txt_path]:
+                            self._recored_img2txt_tmp[file_path.strip()].add(txt_path)
+
+            elif os.path.isfile(dirpath):
+                txt_path=dirpath
+                if os.path.exists(txt_path):
+                    with open(txt_path,"r") as fr:
+                        self._recored_txt_content_tmp[txt_path]=self._recored_txt_content_tmp[txt_path]|set([x if x.endswith("\n") else x+"\n" for x in fr.readlines()])
+                    for file_path in self._recored_txt_content_tmp[txt_path]:
+                        self._recored_img2txt_tmp[file_path.strip()].add(txt_path)
+
+
+    def recordImgPath2Txt_Slot(self,idx_str:str):
+        if self.lastOpenDir is not None:
+            self.recordTxtDir=self.lastOpenDir
+        if self.filename:
+            txt_path=os.path.join(os.path.dirname(self.filename),idx_str+".txt")
+            self._recored_img2txt_tmp[self.filename].add(txt_path)
+            if not self._recored_txt_content_tmp[txt_path]:
+                self.synchronizeSet(txt_path)
+                self._recored_txt_content_tmp[txt_path].add(self.filename if self.filename.endswith("\n") else self.filename+"\n")
+            else:
+                self._recored_txt_content_tmp[txt_path].add(self.filename if self.filename.endswith("\n") else self.filename+"\n")
+
+            with open(txt_path,"w") as fw:
+                fw.writelines(self._recored_txt_content_tmp[txt_path])
+
+            self.status("{} has add to {}".format(self.filename,txt_path))
+
+
+    def removeImgPathFromTxt_Slot(self):
+        if self.filename:
+            txt_path_list=[]
+            has_txt_list=[]
+            if self.filename in self._recored_img2txt_tmp.keys():
+                txt_path_list=self._recored_img2txt_tmp.pop(self.filename)
+                for txt_path in txt_path_list:
+                    if not self._recored_txt_content_tmp[txt_path]:
+                        self.synchronizeSet(txt_path)
+                    if self.filename+"\n" in self._recored_txt_content_tmp[txt_path]:
+                        self._recored_txt_content_tmp[txt_path].remove(self.filename+"\n")
+                        with open(txt_path,"w") as fw:
+                            fw.writelines(self._recored_txt_content_tmp[txt_path])
+                        has_txt_list.append(txt_path)
+                if has_txt_list:
+                    txt_path_info=",".join([os.path.basename(x) for x in has_txt_list])
+                    self.status("{} has removed from {}".format(self.filename,txt_path_info))
+            else:
+                has_txt_list=[]
+                for i in range(1,10):
+                    txt_path=os.path.join(os.path.dirname(self.filename),str(i)+".txt")
+                    if not self._recored_txt_content_tmp[txt_path]:
+                        self.synchronizeSet(txt_path)
+                    if self.filename+"\n" in self._recored_txt_content_tmp[txt_path]:
+                        self._recored_txt_content_tmp[txt_path].remove(self.filename+"\n")
+                        with open(txt_path,"w") as fw:
+                            fw.writelines(self._recored_txt_content_tmp[txt_path])
+                        has_txt_list.append(txt_path)
+                if has_txt_list:
+                    txt_path_info=",".join([os.path.basename(x) for x in has_txt_list])
+                    self.status("{} has removed from {}".format(self.filename,txt_path_info))
+                
