@@ -780,6 +780,7 @@ class Canvas(QtWidgets.QWidget):
         modifiers = ev.modifiers()
         if int(modifiers) == 0:
             self.snapping = True
+        ev.ignore()
 
     def setLastLabel(self, text, flags):
         assert text
